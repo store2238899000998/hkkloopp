@@ -1,0 +1,13 @@
+aiogram==3.4.1
+fastapi==0.112.2
+pydantic==2.5.3
+python-dotenv==1.0.1
+SQLAlchemy==2.0.32
+psycopg2-binary==2.9.9
+alembic==1.13.2
+APScheduler==3.10.4
+uvicorn[standard]==0.30.5
+python-dateutil==2.9.0.post0
+gunicorn==21.2.0
+
+
