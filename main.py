@@ -1,9 +1,6 @@
-from __future__ import annotations
-
+from fastapi import FastAPI
 import asyncio
-import sys
-import uvicorn
-from multiprocessing import Process
+from contextlib import asynccontextmanager
 
 from app.db import init_db
 from scheduler.jobs import start_scheduler
@@ -11,87 +8,45 @@ from bots.user_bot import run_user_bot
 from bots.admin_bot import run_admin_bot
 
 
-async def start_bots_and_scheduler():
-	"""Start both bots and the scheduler"""
-	print("🚀 Starting Investment Bot System...")
-	
-	# Initialize database
-	print("📊 Initializing database...")
-	init_db()
-	print("✅ Database initialized")
-	
-	# Start scheduler
-	print("⏰ Starting scheduler...")
-	start_scheduler()
-	print("✅ Scheduler started")
-	
-	# Start both bots concurrently
-	print("🤖 Starting Telegram bots...")
-	try:
-		await asyncio.gather(
-			run_user_bot(),
-			run_admin_bot(),
-		)
-	except KeyboardInterrupt:
-		print("\n🛑 Shutting down bots...")
-	except Exception as e:
-		print(f"❌ Error starting bots: {e}")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup & shutdown lifecycle"""
+    print("🚀 Starting Investment Bot system...")
+
+    # 1. Init database
+    try:
+        init_db()
+        print("✅ Database initialized")
+    except Exception as e:
+        print(f"❌ Database init failed: {e}")
+
+    # 2. Start scheduler
+    try:
+        start_scheduler()
+        print("✅ Scheduler started")
+    except Exception as e:
+        print(f"❌ Scheduler failed: {e}")
+
+    # 3. Start bots concurrently in background
+    try:
+        asyncio.create_task(run_user_bot())
+        asyncio.create_task(run_admin_bot())
+        print("🤖 Bots started (user + admin)")
+    except Exception as e:
+        print(f"❌ Bot startup error: {e}")
+
+    yield  # 👉 FastAPI runs here
+
+    # 4. Shutdown hooks (optional cleanup)
+    print("🛑 Shutting down Investment Bot system...")
 
 
-def start_api():
-	"""Start the FastAPI service"""
-	print("🌐 Starting FastAPI server...")
-	uvicorn.run("api.main:app", host="0.0.0.0", port=8000, reload=False)
+app = FastAPI(lifespan=lifespan)
 
 
-def start_all():
-	"""Start everything: API, bots, and scheduler"""
-	print("🎯 Starting complete Investment Bot system...")
-	
-	# Start API in a separate process
-	api_process = Process(target=start_api)
-	api_process.start()
-	print("✅ API started on http://localhost:8000")
-	
-	# Start bots and scheduler in main process
-	try:
-		asyncio.run(start_bots_and_scheduler())
-	except KeyboardInterrupt:
-		print("\n🛑 Shutting down...")
-		api_process.terminate()
-		api_process.join()
-		print("✅ All services stopped")
+@app.get("/")
+async def root():
+    return {"message": "Hello from Investment Bot API + Bots 🚀"}
 
-
-if __name__ == "__main__":
-	if len(sys.argv) > 1:
-		command = sys.argv[1].lower()
-		
-		if command == "api":
-			print("🌐 Starting API only...")
-			start_api()
-		elif command == "bots":
-			print("🤖 Starting bots and scheduler only...")
-			asyncio.run(start_bots_and_scheduler())
-		elif command == "all" or command == "start":
-			start_all()
-		else:
-			print("""
-🎯 Investment Bot - Usage Options:
-
-python main.py          # Start bots + scheduler only
-python main.py api      # Start API only  
-python main.py bots     # Start bots + scheduler only
-python main.py all      # Start everything (API + bots + scheduler)
-python main.py start    # Same as 'all'
-
-Examples:
-  python main.py        # Quick start for development
-  python main.py all    # Full production setup
-""")
-	else:
-		# Default: start bots and scheduler only
-		print("🤖 Starting bots and scheduler...")
-		asyncio.run(start_bots_and_scheduler())
 
 
