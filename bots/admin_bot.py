@@ -419,9 +419,22 @@ async def run_admin_bot():
     """Run the admin bot with proper session management"""
     try:
         print("🔐 Starting Admin Bot...")
-        await dp.start_polling(bot, skip_updates=True)
+        # Add process ID for debugging
+        import os
+        print(f"🆔 Process ID: {os.getpid()}")
+        print(f"🆔 Bot Token: {bot.token[:10]}...")
+        
+        # Use skip_updates=True and add conflict handling
+        await dp.start_polling(
+            bot, 
+            skip_updates=True,
+            allowed_updates=["message", "callback_query", "chat_member"]
+        )
     except Exception as e:
         print(f"❌ Admin Bot Error: {e}")
+        if "Conflict: terminated by other getUpdates request" in str(e):
+            print("⚠️  Bot conflict detected - another instance may be running")
+        raise
     finally:
         print("🛑 Admin Bot stopped")
         await bot.session.close()

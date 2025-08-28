@@ -7,7 +7,7 @@ from app.db import Base
 class User(Base):
     __tablename__ = "users"
     
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     email: Mapped[str | None] = mapped_column(String(120), nullable=True)
@@ -30,7 +30,7 @@ class User(Base):
 class SupportTicket(Base):
     __tablename__ = "support_tickets"
     
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     ticket_id: Mapped[str] = mapped_column(String(36), unique=True, index=True)
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.user_id"))
     message: Mapped[str] = mapped_column(Text, nullable=False)
@@ -45,7 +45,7 @@ class SupportTicket(Base):
 class AccessCode(Base):
     __tablename__ = "access_codes"
     
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     is_used: Mapped[bool] = mapped_column(Boolean, default=False)
     used_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
@@ -56,7 +56,7 @@ class AccessCode(Base):
 class InvestmentHistory(Base):
     __tablename__ = "investment_history"
     
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.user_id"))
     transaction_type: Mapped[str] = mapped_column(String(50), nullable=False)  # roi_payment, reinvestment, withdrawal, initial_deposit, admin_credit
     amount: Mapped[float] = mapped_column(Float, nullable=False)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 🔧 Database Migration Script
-Adds the investment_history table for tracking financial transactions
+Fixes database schema and adds the investment_history table for tracking financial transactions
 """
 
 from sqlalchemy import text
@@ -9,15 +9,41 @@ from app.db import engine, init_db
 
 
 def migrate_investment_history():
-    """Add investment_history table to the database"""
+    """Fix database schema and add investment_history table"""
     print("🔧 Starting database migration...")
     
     try:
-        # Initialize database (creates all tables)
-        init_db()
-        print("✅ Database initialized")
+        # Check current database structure
+        with engine.connect() as conn:
+            # Check if users table has 'id' column
+            result = conn.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'users' AND column_name = 'id';
+            """))
+            has_id_column = result.fetchone() is not None
+            
+            if not has_id_column:
+                print("⚠️  Users table missing 'id' column - recreating tables...")
+                
+                # Drop existing tables to recreate with correct schema
+                conn.execute(text("DROP TABLE IF EXISTS investment_history CASCADE"))
+                conn.execute(text("DROP TABLE IF EXISTS support_tickets CASCADE"))
+                conn.execute(text("DROP TABLE IF EXISTS access_codes CASCADE"))
+                conn.execute(text("DROP TABLE IF EXISTS users CASCADE"))
+                conn.commit()
+                print("✅ Old tables dropped")
+                
+                # Recreate tables with correct schema
+                init_db()
+                print("✅ Tables recreated with correct schema")
+            else:
+                print("✅ Users table has correct structure")
+                # Just initialize to ensure all tables exist
+                init_db()
+                print("✅ Database initialized")
         
-        # Check if investment_history table exists
+        # Verify investment_history table exists
         with engine.connect() as conn:
             result = conn.execute(text("""
                 SELECT EXISTS (
@@ -28,9 +54,9 @@ def migrate_investment_history():
             table_exists = result.scalar()
             
             if table_exists:
-                print("✅ investment_history table already exists")
+                print("✅ investment_history table exists")
             else:
-                print("❌ investment_history table not found - this shouldn't happen with init_db()")
+                print("❌ investment_history table not found - this shouldn't happen")
         
         print("🎯 Migration completed successfully!")
         

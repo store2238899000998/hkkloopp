@@ -46,11 +46,21 @@ async def lifespan(app: FastAPI):
         logger.error(f"❌ ROI catch-up failed: {e}")
         # Don't fail startup for catch-up issues
 
-    # 4. Start bots concurrently in background
+    # 4. Start bots concurrently in background with startup delay
     try:
-        asyncio.create_task(run_user_bot())
-        asyncio.create_task(run_admin_bot())
+        # Add small delay to prevent multiple instances from starting simultaneously
+        await asyncio.sleep(2)
+        
+        # Start bots with staggered startup
+        user_bot_task = asyncio.create_task(run_user_bot())
+        await asyncio.sleep(1)  # Stagger bot startup
+        admin_bot_task = asyncio.create_task(run_admin_bot())
+        
         logger.info("🤖 Bots started (user + admin)")
+        
+        # Wait for both bots to start
+        await asyncio.sleep(3)
+        
     except Exception as e:
         logger.error(f"❌ Bot startup error: {e}")
         raise
@@ -90,10 +100,13 @@ async def root():
 async def health():
     """Enhanced health check endpoint"""
     from datetime import datetime
+    import os
     return {
         "status": "healthy",
         "service": "Investment Bot",
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.utcnow().isoformat(),
+        "process_id": os.getpid(),
+        "deployment_time": os.getenv("DEPLOYMENT_TIME", "unknown")
     }
 
 
