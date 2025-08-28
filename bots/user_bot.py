@@ -421,4 +421,22 @@ async def referral_cb(cb: CallbackQuery):
 
 
 async def run_user_bot():
-    await dp.start_polling(bot)
+    """Run the user bot with proper session management"""
+    try:
+        print("🤖 Starting User Bot...")
+        await dp.start_polling(bot, skip_updates=True)
+    except Exception as e:
+        print(f"❌ User Bot Error: {e}")
+    finally:
+        print("🛑 User Bot stopped")
+        await bot.session.close()
+
+
+async def stop_user_bot():
+    """Gracefully stop the user bot"""
+    try:
+        await dp.stop_polling()
+        await bot.session.close()
+        print("✅ User Bot stopped gracefully")
+    except Exception as e:
+        print(f"❌ Error stopping User Bot: {e}")

@@ -5,8 +5,8 @@ import logging
 
 from app.db import init_db
 from scheduler.jobs import start_scheduler, stop_scheduler, catchup_missed_roi
-from bots.user_bot import run_user_bot
-from bots.admin_bot import run_admin_bot
+from bots.user_bot import run_user_bot, stop_user_bot
+from bots.admin_bot import run_admin_bot, stop_admin_bot
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -64,6 +64,18 @@ async def lifespan(app: FastAPI):
         logger.info("✅ Scheduler stopped gracefully")
     except Exception as e:
         logger.error(f"❌ Scheduler shutdown error: {e}")
+    
+    try:
+        await stop_user_bot()
+        logger.info("✅ User bot stopped gracefully")
+    except Exception as e:
+        logger.error(f"❌ User bot shutdown error: {e}")
+    
+    try:
+        await stop_admin_bot()
+        logger.info("✅ Admin bot stopped gracefully")
+    except Exception as e:
+        logger.error(f"❌ Admin bot shutdown error: {e}")
 
 
 app = FastAPI(lifespan=lifespan)

@@ -356,66 +356,19 @@ async def cmd_credit(message: Message):
 
 @dp.callback_query(F.data == "view_tickets")
 @admin_callback_only
-async def view_tickets_cb(callback: CallbackQuery):
-    """View all support tickets"""
+async def view_tickets(callback: CallbackQuery):
     with get_session() as session:
-        tickets = list_support_tickets(session)
-        if not tickets:
-            await callback.message.edit_text(
-                "🎫 **Support Tickets**\n\n"
-                "No support tickets found.",
-                reply_markup=main_admin_kb(),
-                parse_mode="Markdown"
-            )
-            await callback.answer()
-            return
-        
-        # Group tickets by status (new vs old)
-        now = datetime.utcnow()
-        new_tickets = []
-        old_tickets = []
-        
-        for ticket in tickets:
-            # Consider tickets newer than 24 hours as "new"
-            if (now - ticket.created_at).total_seconds() < 86400:  # 24 hours
-                new_tickets.append(ticket)
-            else:
-                old_tickets.append(ticket)
-        
-        # Display tickets with better formatting
-        tickets_text = "🎫 **Support Tickets**\n\n"
-        
-        if new_tickets:
-            tickets_text += "🆕 **NEW TICKETS (Last 24h):**\n\n"
-            for ticket in new_tickets[:5]:  # Show max 5 new tickets
-                tickets_text += (
-                    f"🎫 **Ticket:** `{ticket.ticket_id[:8]}`\n"
-                    f"👤 **User ID:** {ticket.user_id}\n"
-                    f"📝 **Message:** {ticket.message[:100]}{'...' if len(ticket.message) > 100 else ''}\n"
-                    f"⏰ **Created:** {ticket.created_at.strftime('%Y-%m-%d %H:%M UTC')}\n\n"
-                )
-        
-        if old_tickets:
-            tickets_text += "📋 **OLDER TICKETS:**\n\n"
-            for ticket in old_tickets[:3]:  # Show max 3 old tickets
-                tickets_text += (
-                    f"🎫 **Ticket:** `{ticket.ticket_id[:8]}`\n"
-                    f"👤 **User ID:** {ticket.user_id}\n"
-                    f"📝 **Message:** {ticket.message[:80]}{'...' if len(ticket.message) > 80 else ''}\n"
-                    f"⏰ **Created:** {ticket.created_at.strftime('%Y-%m-%d %H:%M UTC')}\n\n"
-                )
-        
-        # Add summary
-        total_tickets = len(tickets)
-        tickets_text += f"📊 **Summary:** {total_tickets} total tickets"
-        if new_tickets:
-            tickets_text += f" ({len(new_tickets)} new)"
-        
-        await callback.message.edit_text(
-            tickets_text,
-            reply_markup=main_admin_kb(),
-            parse_mode="Markdown"
-        )
+        tickets = list_support_tickets(session, limit=10)
+    if not tickets:
+        await callback.message.answer("📭 No support tickets found.")
+        await callback.answer()
+        return
+
+    lines = ["🎫 Recent Support Tickets:\n"]
+    for t in tickets:
+        lines.append(f"#{t.ticket_id[:8]} | User: {t.user_id} | {t.created_at:%Y-%m-%d %H:%M}\n{t.message[:100]}...")
+
+    await callback.message.answer("\n\n".join(lines))
     await callback.answer()
 
 
@@ -463,4 +416,22 @@ async def admin_help(message: Message):
 
 
 async def run_admin_bot():
-    await dp.start_polling(bot)
+    """Run the admin bot with proper session management"""
+    try:
+        print("🔐 Starting Admin Bot...")
+        await dp.start_polling(bot, skip_updates=True)
+    except Exception as e:
+        print(f"❌ Admin Bot Error: {e}")
+    finally:
+        print("🛑 Admin Bot stopped")
+        await bot.session.close()
+
+
+async def stop_admin_bot():
+    """Gracefully stop the admin bot"""
+    try:
+        await dp.stop_polling()
+        await bot.session.close()
+        print("✅ Admin Bot stopped gracefully")
+    except Exception as e:
+        print(f"❌ Error stopping Admin Bot: {e}")

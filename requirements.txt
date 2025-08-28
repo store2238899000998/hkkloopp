@@ -9,6 +9,7 @@ APScheduler==3.10.4
 uvicorn[standard]==0.30.5
 python-dateutil==2.9.0.post0
 gunicorn==21.2.0
+psutil>=5.9.0
 
 
 
