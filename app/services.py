@@ -22,7 +22,7 @@ def create_user(session: Session, user_id: int, name: str, initial_balance: floa
 	user = session.get(User, user_id)
 	if user:
 		return user
-	now = datetime.utcnow()
+	now = datetime.now(datetime.UTC)
 	user = User(
 		user_id=user_id,
 		name=name,
@@ -50,7 +50,7 @@ def create_user(session: Session, user_id: int, name: str, initial_balance: floa
 				balance_before=0.0,
 				balance_after=initial_balance,
 				description="Initial Investment Deposit",
-				metadata={"deposit_type": "initial_registration"}
+				transaction_metadata={"deposit_type": "initial_registration"}
 			)
 		except Exception as e:
 			logger.error(f"❌ Failed to record initial deposit transaction: {e}")
@@ -84,7 +84,7 @@ def credit_user_balance(session: Session, user_id: int, amount: float) -> Option
 			balance_before=old_balance,
 			balance_after=user.current_balance,
 			description="Admin Credit",
-			metadata={"credit_type": "admin_manual"}
+			transaction_metadata={"credit_type": "admin_manual"}
 		)
 	except Exception as e:
 		logger.error(f"❌ Failed to record admin credit transaction: {e}")
@@ -105,7 +105,7 @@ def generate_access_code(session: Session, name: str, initial_balance: float, pr
 	code = secrets.token_hex(4)  # 8 hex chars
 	expires_at = None
 	if expires_in_days:
-		expires_at = datetime.utcnow() + timedelta(days=expires_in_days)
+		expires_at = datetime.now(datetime.UTC) + timedelta(days=expires_in_days)
 	access = AccessCode(
 		code=code,
 		name=name,
@@ -119,18 +119,19 @@ def generate_access_code(session: Session, name: str, initial_balance: float, pr
 
 
 def redeem_access_code(session: Session, code: str, user_id: int) -> Optional[User]:
-	access: AccessCode | None = session.get(AccessCode, code)
+	# Query by code field instead of using session.get (which looks up by primary key)
+	access: AccessCode | None = session.query(AccessCode).filter(AccessCode.code == code).first()
 	if not access:
 		return None
 	if access.used_by is not None:
 		return None
-	if access.expires_at and datetime.utcnow() > access.expires_at:
+	if access.expires_at and datetime.now(datetime.UTC) > access.expires_at:
 		return None
 	if access.preassigned_user_id and access.preassigned_user_id != user_id:
 		return None
 	user = create_user(session, user_id=user_id, name=access.name, initial_balance=access.initial_balance)
 	access.used_by = user_id
-	access.used_at = datetime.utcnow()
+	access.used_at = datetime.now(datetime.UTC)
 	return user
 
 
@@ -142,7 +143,7 @@ def process_due_roi_for_user(session: Session, user: User) -> bool:
 		logger.warning(f"⚠️ User {user.user_id} has no next_roi_date set")
 		return False
 	
-	if datetime.utcnow() < user.next_roi_date:
+	if datetime.now(datetime.UTC) < user.next_roi_date:
 		return False
 	
 	if user.roi_cycles_completed >= settings.max_roi_cycles:
@@ -176,7 +177,7 @@ def process_due_roi_for_user(session: Session, user: User) -> bool:
 			balance_before=old_balance,
 			balance_after=user.current_balance,
 			description=f"ROI Payment - Cycle {user.roi_cycles_completed}",
-			metadata={
+			transaction_metadata={
 				"cycle_number": user.roi_cycles_completed,
 				"roi_percentage": settings.weekly_roi_percent,
 				"base_amount": user.initial_balance
@@ -328,7 +329,7 @@ def calculate_earnings_projection(
             })
         
         # Calculate completion date (7 days per cycle)
-        completion_date = datetime.utcnow() + timedelta(days=remaining_cycles * 7)
+        		completion_date = datetime.now(datetime.UTC) + timedelta(days=remaining_cycles * 7)
         
         return {
             "total_projected": total_projected,
