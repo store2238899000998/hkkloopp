@@ -30,19 +30,21 @@ class SupportStates(StatesGroup):
 
 def main_menu_kb():
     kb = InlineKeyboardBuilder()
-    kb.button(text="Balance", callback_data="balance")
-    kb.button(text="Withdraw", callback_data="withdraw")
-    kb.button(text="Reinvest", callback_data="reinvest")
-    kb.button(text="Support", callback_data="support")
-    kb.button(text="Referral", callback_data="referral")
-    kb.adjust(2, 2, 1)
+    kb.button(text="💰 Balance", callback_data="balance")
+    kb.button(text="📈 Earnings Calculator", callback_data="earnings_calculator")
+    kb.button(text="📊 Investment History", callback_data="investment_history")
+    kb.button(text="💸 Withdraw", callback_data="withdraw")
+    kb.button(text="🔄 Reinvest", callback_data="reinvest")
+    kb.button(text="🎫 Support", callback_data="support")
+    kb.button(text="👥 Referral", callback_data="referral")
+    kb.adjust(2, 2, 2, 1)
     return kb.as_markup()
 
 
 def support_menu_kb():
     kb = InlineKeyboardBuilder()
-    kb.button(text="📝 Create New Ticket", callback_data="create_ticket")
-    kb.button(text="🔙 Back to Menu", callback_data="back_to_menu")
+    kb.button(text="📝 Create Support Ticket", callback_data="create_ticket")
+    kb.button(text="🔙 Back to Main Menu", callback_data="back_to_main")
     kb.adjust(1, 1)
     return kb.as_markup()
 
@@ -51,6 +53,32 @@ def cancel_support_kb():
     kb = InlineKeyboardBuilder()
     kb.button(text="❌ Cancel", callback_data="cancel_support")
     kb.adjust(1)
+    return kb.as_markup()
+
+
+def back_to_main_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🔙 Back to Main Menu", callback_data="back_to_main")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def earnings_calculator_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="📊 View Projections", callback_data="view_projections")
+    kb.button(text="📈 Weekly Breakdown", callback_data="weekly_breakdown")
+    kb.button(text="🔙 Back to Main Menu", callback_data="back_to_main")
+    kb.adjust(1, 1, 1)
+    return kb.as_markup()
+
+
+def investment_history_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="📋 All Transactions", callback_data="all_transactions")
+    kb.button(text="💰 ROI Payments", callback_data="roi_transactions")
+    kb.button(text="🔄 Reinvestments", callback_data="reinvestment_transactions")
+    kb.button(text="🔙 Back to Main Menu", callback_data="back_to_main")
+    kb.adjust(1, 1, 1, 1)
     return kb.as_markup()
 
 
@@ -417,7 +445,303 @@ async def referral_cb(cb: CallbackQuery):
     await cb.answer()
 
 
+# Add missing callback handlers
+@dp.callback_query(F.data == "earnings_calculator")
+async def earnings_calculator_cb(callback: CallbackQuery):
+    """Show earnings calculator menu"""
+    if not await check_user_exists(callback):
+        await send_clean_message(callback.from_user.id, callback.message.chat.id, "❌ Please redeem your access code first using /code <your_code>", reply_markup=main_menu_kb())
+        await callback.answer()
+        return
+    
+    await callback.message.edit_text(
+        "📈 **Earnings Calculator**\n\n"
+        "Calculate your projected earnings and ROI growth potential:",
+        reply_markup=earnings_calculator_kb(),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
 
+
+@dp.callback_query(F.data == "view_projections")
+async def view_projections_cb(callback: CallbackQuery):
+    """Show earnings projections"""
+    try:
+        with get_session() as session:
+            user = session.get(User, callback.from_user.id)
+            if not user:
+                await callback.message.edit_text(
+                    "❌ **User not found!**\n\n"
+                    "Please contact an administrator to register your account.",
+                    reply_markup=back_to_main_kb(),
+                    parse_mode="Markdown"
+                )
+                await callback.answer()
+                return
+            
+            # Calculate projections manually since we don't have the service functions
+            remaining_cycles = user.max_roi_cycles - user.roi_cycles_completed
+            weekly_roi_percent = 8.0  # From settings
+            
+            if remaining_cycles <= 0:
+                projection_text = (
+                    "🎯 **Investment Complete!**\n\n"
+                    f"✅ You have completed all {user.max_roi_cycles} ROI cycles\n"
+                    f"💰 Final Balance: **${user.current_balance:.2f}**\n"
+                    f"🚪 Withdrawal: **{'Enabled' if user.can_withdraw else 'Disabled'}**\n\n"
+                    "🎉 Congratulations on completing your investment journey!"
+                )
+            else:
+                weekly_roi_decimal = weekly_roi_percent / 100.0
+                total_projected = user.current_balance
+                roi_earnings = 0.0
+                
+                for week in range(1, remaining_cycles + 1):
+                    weekly_roi = user.current_balance * weekly_roi_decimal
+                    roi_earnings += weekly_roi
+                    total_projected += weekly_roi
+                
+                from datetime import timedelta
+                completion_date = datetime.utcnow() + timedelta(days=remaining_cycles * 7)
+                
+                projection_text = (
+                    "📊 **Earnings Projection**\n\n"
+                    f"💰 **Current Balance:** ${user.current_balance:.2f}\n"
+                    f"📈 **ROI Cycles:** {user.roi_cycles_completed}/{user.max_roi_cycles}\n"
+                    f"⏳ **Remaining Cycles:** {remaining_cycles}\n"
+                    f"🎯 **Weekly ROI:** {weekly_roi_percent}%\n\n"
+                    f"🚀 **Projected Final Balance:** ${total_projected:.2f}\n"
+                    f"💵 **Total ROI Earnings:** ${roi_earnings:.2f}\n"
+                    f"📅 **Completion Date:** {completion_date.strftime('%Y-%m-%d')}"
+                )
+            
+            await callback.message.edit_text(
+                projection_text,
+                reply_markup=earnings_calculator_kb(),
+                parse_mode="Markdown"
+            )
+            
+    except Exception as e:
+        await callback.message.edit_text(
+            f"❌ **Error calculating projections:** {str(e)}",
+            reply_markup=earnings_calculator_kb(),
+            parse_mode="Markdown"
+        )
+    
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "weekly_breakdown")
+async def weekly_breakdown_cb(callback: CallbackQuery):
+    """Show weekly ROI breakdown"""
+    try:
+        with get_session() as session:
+            user = session.get(User, callback.from_user.id)
+            if not user:
+                await callback.message.edit_text(
+                    "❌ **User not found!**\n\n"
+                    "Please contact an administrator to register your account.",
+                    reply_markup=earnings_calculator_kb(),
+                    parse_mode="Markdown"
+                )
+                await callback.answer()
+                return
+            
+            remaining_cycles = user.max_roi_cycles - user.roi_cycles_completed
+            weekly_roi_percent = 8.0
+            
+            if remaining_cycles <= 0:
+                breakdown_text = "✅ **No remaining ROI cycles to project.**"
+            else:
+                breakdown_text = "📅 **Weekly ROI Breakdown**\n\n"
+                weekly_roi_decimal = weekly_roi_percent / 100.0
+                total_projected = user.current_balance
+                roi_earnings = 0.0
+                
+                for week in range(1, remaining_cycles + 1):
+                    weekly_roi = user.current_balance * weekly_roi_decimal
+                    roi_earnings += weekly_roi
+                    total_projected += weekly_roi
+                    
+                    breakdown_text += (
+                        f"**Week {week}:**\n"
+                        f"   💰 ROI: +${weekly_roi:.2f}\n"
+                        f"   📊 Cumulative: ${roi_earnings:.2f}\n"
+                        f"   💵 Balance: ${total_projected:.2f}\n\n"
+                    )
+            
+            await callback.message.edit_text(
+                breakdown_text,
+                reply_markup=earnings_calculator_kb(),
+                parse_mode="Markdown"
+            )
+            
+    except Exception as e:
+        await callback.message.edit_text(
+            f"❌ **Error showing breakdown:** {str(e)}",
+            reply_markup=earnings_calculator_kb(),
+            parse_mode="Markdown"
+        )
+    
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "investment_history")
+async def investment_history_cb(callback: CallbackQuery):
+    """Show investment history menu"""
+    if not await check_user_exists(callback):
+        await send_clean_message(callback.from_user.id, callback.message.chat.id, "❌ Please redeem your access code first using /code <your_code>", reply_markup=main_menu_kb())
+        await callback.answer()
+        return
+    
+    await callback.message.edit_text(
+        "📊 **Investment History**\n\n"
+        "Track all your financial transactions and investment activity:",
+        reply_markup=investment_history_kb(),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "all_transactions")
+async def all_transactions_cb(callback: CallbackQuery):
+    """Show all transactions"""
+    try:
+        with get_session() as session:
+            user = session.get(User, callback.from_user.id)
+            if not user:
+                await callback.message.edit_text(
+                    "❌ **User not found!**\n\n"
+                    "Please contact an administrator to register your account.",
+                    reply_markup=investment_history_kb(),
+                    parse_mode="Markdown"
+                )
+                await callback.answer()
+                return
+            
+            # For now, show basic user info since we don't have the full transaction system
+            transaction_text = (
+                "📋 **Your Investment Summary**\n\n"
+                f"💰 **Current Balance:** ${user.current_balance:.2f}\n"
+                f"💳 **Initial Investment:** ${user.initial_balance:.2f}\n"
+                f"📈 **ROI Cycles Completed:** {user.roi_cycles_completed}/{user.max_roi_cycles}\n"
+                f"💵 **Total ROI Earned:** ${user.current_balance - user.initial_balance:.2f}\n"
+                f"📅 **Account Created:** {user.created_at.strftime('%Y-%m-%d')}\n\n"
+                "💡 **Note:** Detailed transaction history will be available in the next update!"
+            )
+            
+            await callback.message.edit_text(
+                transaction_text,
+                reply_markup=investment_history_kb(),
+                parse_mode="Markdown"
+            )
+            
+    except Exception as e:
+        await callback.message.edit_text(
+            f"❌ **Error loading transactions:** {str(e)}",
+            reply_markup=investment_history_kb(),
+            parse_mode="Markdown"
+        )
+    
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "roi_transactions")
+async def roi_transactions_cb(callback: CallbackQuery):
+    """Show ROI payment transactions"""
+    try:
+        with get_session() as session:
+            user = session.get(User, callback.from_user.id)
+            if not user:
+                await callback.message.edit_text(
+                    "❌ **User not found!**\n\n"
+                    "Please contact an administrator to register your account.",
+                    reply_markup=investment_history_kb(),
+                    parse_mode="Markdown"
+                )
+                await callback.answer()
+                return
+            
+            if user.roi_cycles_completed == 0:
+                roi_text = "💰 **No ROI Payments Yet**\n\nROI payments will appear here once they start processing."
+            else:
+                total_roi = user.current_balance - user.initial_balance
+                roi_text = (
+                    f"💰 **ROI Payment Summary**\n\n"
+                    f"📈 **ROI Cycles Completed:** {user.roi_cycles_completed}\n"
+                    f"💵 **Total ROI Received:** ${total_roi:.2f}\n"
+                    f"🎯 **Weekly ROI Rate:** 8%\n\n"
+                    "💡 **Note:** Detailed weekly breakdown will be available in the next update!"
+                )
+            
+            await callback.message.edit_text(
+                roi_text,
+                reply_markup=investment_history_kb(),
+                parse_mode="Markdown"
+            )
+            
+    except Exception as e:
+        await callback.message.edit_text(
+            f"❌ **Error loading ROI transactions:** {str(e)}",
+            reply_markup=investment_history_kb(),
+            parse_mode="Markdown"
+        )
+    
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "reinvestment_transactions")
+async def reinvestment_transactions_cb(callback: CallbackQuery):
+    """Show reinvestment transactions"""
+    try:
+        with get_session() as session:
+            user = session.get(User, callback.from_user.id)
+            if not user:
+                await callback.message.edit_text(
+                    "❌ **User not found!**\n\n"
+                    "Please contact an administrator to register your account.",
+                    reply_markup=investment_history_kb(),
+                    parse_mode="Markdown"
+                )
+                await callback.answer()
+                return
+            
+            reinvest_text = (
+                "🔄 **Reinvestment Status**\n\n"
+                "💡 **Current Status:** No active reinvestments\n\n"
+                "🚀 **How to Reinvest:**\n"
+                "• Contact support to set up reinvestment\n"
+                "• Reinvest your ROI earnings for compound growth\n"
+                "• Start new investment cycles with higher potential\n\n"
+                "💡 **Note:** Detailed reinvestment history will be available in the next update!"
+            )
+            
+            await callback.message.edit_text(
+                reinvest_text,
+                reply_markup=investment_history_kb(),
+                parse_mode="Markdown"
+            )
+            
+    except Exception as e:
+        await callback.message.edit_text(
+            f"❌ **Error loading reinvestment transactions:** {str(e)}",
+            reply_markup=investment_history_kb(),
+            parse_mode="Markdown"
+        )
+    
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "back_to_main")
+async def back_to_main_cb(callback: CallbackQuery):
+    """Return to main menu"""
+    await callback.message.edit_text(
+        "🚀 **Investment Bot Menu**\n\n"
+        "Choose an option from the menu below:",
+        reply_markup=main_menu_kb(),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
 
 
 async def run_user_bot():
