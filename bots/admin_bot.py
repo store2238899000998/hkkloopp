@@ -13,7 +13,7 @@ from app.db import get_session
 from app.services import (
     create_user,
     credit_user_balance,
-    list_support_tickets,
+    get_support_tickets,
     create_user_with_access_code,
     list_users  # make sure this import exists
 )
@@ -358,7 +358,7 @@ async def cmd_credit(message: Message):
 @admin_callback_only
 async def view_tickets(callback: CallbackQuery):
     with get_session() as session:
-        tickets = list_support_tickets(session, limit=10)
+        tickets = get_support_tickets(session, limit=10)
     if not tickets:
         await callback.message.answer("📭 No support tickets found.")
         await callback.answer()

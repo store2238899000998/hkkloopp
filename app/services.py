@@ -221,11 +221,14 @@ def create_support_ticket(session: Session, user_id: int, message: str) -> Suppo
     return ticket
 
 
-def get_support_tickets(session: Session, status: str | None = None) -> list[SupportTicket]:
+def get_support_tickets(session: Session, status: str | None = None, limit: int | None = None) -> list[SupportTicket]:
     query = session.query(SupportTicket)
     if status:
         query = query.filter(SupportTicket.status == status)
-    return query.order_by(SupportTicket.created_at.desc()).all()
+    query = query.order_by(SupportTicket.created_at.desc())
+    if limit:
+        query = query.limit(limit)
+    return query.all()
 
 
 def update_ticket_status(session: Session, ticket_id: str, status: str) -> bool:
