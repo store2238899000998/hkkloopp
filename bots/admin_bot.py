@@ -17,6 +17,8 @@ from app.services import (
     create_user_with_access_code,
     list_users  # make sure this import exists
 )
+from scheduler.jobs import catchup_missed_roi
+from datetime import datetime
 
 bot = Bot(token=settings.admin_bot_token)
 dp = Dispatcher()
@@ -56,7 +58,17 @@ def main_admin_kb():
     kb.button(text="💰 Credit Balance", callback_data="credit_balance")
     kb.button(text="🎫 View Support Tickets", callback_data="view_tickets")
     kb.button(text="📊 List All Users", callback_data="list_users")
-    kb.adjust(2, 2)
+    kb.button(text="🔄 ROI Recovery", callback_data="roi_recovery")
+    kb.adjust(2, 2, 1)
+    return kb.as_markup()
+
+
+def roi_recovery_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🔄 Catch Up Missed ROI", callback_data="catchup_roi")
+    kb.button(text="📊 ROI Status Report", callback_data="roi_status_report")
+    kb.button(text="🔙 Back to Main Menu", callback_data="back_to_main")
+    kb.adjust(1, 1, 1)
     return kb.as_markup()
 
 
@@ -67,6 +79,169 @@ async def admin_start(message: Message):
         "🔐 Admin Dashboard\n\nWelcome! What would you like to do?",
         reply_markup=main_admin_kb()
     )
+
+
+@dp.message(Command("catchup_roi"))
+@admin_only
+async def manual_catchup_roi_cmd(message: Message):
+    """Manual command to catch up missed ROI payments"""
+    await message.answer("🔄 Starting ROI catch-up process...")
+    try:
+        processed_users, total_payments = await catchup_missed_roi()
+        if total_payments > 0:
+            await message.answer(
+                f"✅ ROI catch-up completed successfully!\n\n"
+                f"👥 Users processed: {processed_users}\n"
+                f"💰 Total payments recovered: {total_payments}\n\n"
+                f"All missed ROI payments have been processed."
+            )
+        else:
+            await message.answer("✅ No missed ROI payments found. All users are up to date!")
+    except Exception as e:
+        await message.answer(f"❌ ROI catch-up failed: {e}")
+
+
+@dp.message(Command("roi_status"))
+@admin_only
+async def roi_status_cmd(message: Message):
+    """Show ROI status for all users"""
+    with get_session() as session:
+        users = list_users(session)
+        if not users:
+            await message.answer("📊 No users found in the system.")
+            return
+        
+        status_text = "📊 **ROI Status Report**\n\n"
+        total_users = len(users)
+        completed_users = 0
+        active_users = 0
+        
+        for user in users:
+            if user.roi_cycles_completed >= settings.max_roi_cycles:
+                completed_users += 1
+            elif user.roi_cycles_completed > 0:
+                active_users += 1
+            
+            status_text += (
+                f"👤 **{user.name}** (ID: {user.user_id})\n"
+                f"   💰 Balance: {user.current_balance:.2f}\n"
+                f"   📈 ROI Cycles: {user.roi_cycles_completed}/{settings.max_roi_cycles}\n"
+                f"   ⏳ Next ROI: {user.next_roi_date.strftime('%Y-%m-%d') if user.next_roi_date else 'N/A'}\n"
+                f"   🚪 Withdrawal: {'✅ Enabled' if user.can_withdraw else '❌ Disabled'}\n\n"
+            )
+        
+        summary = (
+            f"📈 **Summary**\n"
+            f"Total Users: {total_users}\n"
+            f"Active ROI: {active_users}\n"
+            f"Completed: {completed_users}\n"
+            f"Pending: {total_users - active_users - completed_users}"
+        )
+        
+        await message.answer(status_text + summary, parse_mode="Markdown")
+
+
+@dp.callback_query(F.data == "roi_recovery")
+@admin_callback_only
+async def roi_recovery_menu(callback: CallbackQuery):
+    await callback.message.edit_text(
+        "🔄 **ROI Recovery & Management**\n\n"
+        "Choose an option to manage ROI processing:",
+        reply_markup=roi_recovery_kb(),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "catchup_roi")
+@admin_callback_only
+async def catchup_roi_callback(callback: CallbackQuery):
+    await callback.message.edit_text("🔄 Starting ROI catch-up process...")
+    try:
+        processed_users, total_payments = await catchup_missed_roi()
+        if total_payments > 0:
+            await callback.message.edit_text(
+                f"✅ **ROI Catch-up Completed!**\n\n"
+                f"👥 Users processed: {processed_users}\n"
+                f"💰 Total payments recovered: {total_payments}\n\n"
+                f"All missed ROI payments have been processed.",
+                reply_markup=roi_recovery_kb(),
+                parse_mode="Markdown"
+            )
+        else:
+            await callback.message.edit_text(
+                "✅ **No Missed ROI Found**\n\n"
+                "All users are up to date with their ROI payments!",
+                reply_markup=roi_recovery_kb(),
+                parse_mode="Markdown"
+            )
+    except Exception as e:
+        await callback.message.edit_text(
+            f"❌ **ROI Catch-up Failed**\n\n"
+            f"Error: {e}\n\n"
+            f"Please check the logs for more details.",
+            reply_markup=roi_recovery_kb(),
+            parse_mode="Markdown"
+        )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "roi_status_report")
+@admin_callback_only
+async def roi_status_report_callback(callback: CallbackQuery):
+    with get_session() as session:
+        users = list_users(session)
+        if not users:
+            await callback.message.edit_text(
+                "📊 No users found in the system.",
+                reply_markup=roi_recovery_kb()
+            )
+            await callback.answer()
+            return
+        
+        status_text = "📊 **ROI Status Report**\n\n"
+        total_users = len(users)
+        completed_users = 0
+        active_users = 0
+        
+        for user in users:
+            if user.roi_cycles_completed >= settings.max_roi_cycles:
+                completed_users += 1
+            elif user.roi_cycles_completed > 0:
+                active_users += 1
+            
+            status_text += (
+                f"👤 **{user.name}** (ID: {user.user_id})\n"
+                f"   💰 Balance: {user.current_balance:.2f}\n"
+                f"   📈 ROI Cycles: {user.roi_cycles_completed}/{settings.max_roi_cycles}\n"
+                f"   ⏳ Next ROI: {user.next_roi_date.strftime('%Y-%m-%d') if user.next_roi_date else 'N/A'}\n"
+                f"   🚪 Withdrawal: {'✅ Enabled' if user.can_withdraw else '❌ Disabled'}\n\n"
+            )
+        
+        summary = (
+            f"📈 **Summary**\n"
+            f"Total Users: {total_users}\n"
+            f"Active ROI: {active_users}\n"
+            f"Completed: {completed_users}\n"
+            f"Pending: {total_users - active_users - completed_users}"
+        )
+        
+        await callback.message.edit_text(
+            status_text + summary,
+            reply_markup=roi_recovery_kb(),
+            parse_mode="Markdown"
+        )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "back_to_main")
+@admin_callback_only
+async def back_to_main_menu(callback: CallbackQuery):
+    await callback.message.edit_text(
+        "🔐 Admin Dashboard\n\nWelcome! What would you like to do?",
+        reply_markup=main_admin_kb()
+    )
+    await callback.answer()
 
 
 @dp.callback_query(F.data == "register_user")
@@ -181,19 +356,66 @@ async def cmd_credit(message: Message):
 
 @dp.callback_query(F.data == "view_tickets")
 @admin_callback_only
-async def view_tickets(callback: CallbackQuery):
+async def view_tickets_cb(callback: CallbackQuery):
+    """View all support tickets"""
     with get_session() as session:
-        tickets = list_support_tickets(session, limit=10)
-    if not tickets:
-        await callback.message.answer("📭 No support tickets found.")
-        await callback.answer()
-        return
-
-    lines = ["🎫 Recent Support Tickets:\n"]
-    for t in tickets:
-        lines.append(f"#{t.ticket_id[:8]} | User: {t.user_id} | {t.created_at:%Y-%m-%d %H:%M}\n{t.message[:100]}...")
-
-    await callback.message.answer("\n\n".join(lines))
+        tickets = list_support_tickets(session)
+        if not tickets:
+            await callback.message.edit_text(
+                "🎫 **Support Tickets**\n\n"
+                "No support tickets found.",
+                reply_markup=main_admin_kb(),
+                parse_mode="Markdown"
+            )
+            await callback.answer()
+            return
+        
+        # Group tickets by status (new vs old)
+        now = datetime.utcnow()
+        new_tickets = []
+        old_tickets = []
+        
+        for ticket in tickets:
+            # Consider tickets newer than 24 hours as "new"
+            if (now - ticket.created_at).total_seconds() < 86400:  # 24 hours
+                new_tickets.append(ticket)
+            else:
+                old_tickets.append(ticket)
+        
+        # Display tickets with better formatting
+        tickets_text = "🎫 **Support Tickets**\n\n"
+        
+        if new_tickets:
+            tickets_text += "🆕 **NEW TICKETS (Last 24h):**\n\n"
+            for ticket in new_tickets[:5]:  # Show max 5 new tickets
+                tickets_text += (
+                    f"🎫 **Ticket:** `{ticket.ticket_id[:8]}`\n"
+                    f"👤 **User ID:** {ticket.user_id}\n"
+                    f"📝 **Message:** {ticket.message[:100]}{'...' if len(ticket.message) > 100 else ''}\n"
+                    f"⏰ **Created:** {ticket.created_at.strftime('%Y-%m-%d %H:%M UTC')}\n\n"
+                )
+        
+        if old_tickets:
+            tickets_text += "📋 **OLDER TICKETS:**\n\n"
+            for ticket in old_tickets[:3]:  # Show max 3 old tickets
+                tickets_text += (
+                    f"🎫 **Ticket:** `{ticket.ticket_id[:8]}`\n"
+                    f"👤 **User ID:** {ticket.user_id}\n"
+                    f"📝 **Message:** {ticket.message[:80]}{'...' if len(ticket.message) > 80 else ''}\n"
+                    f"⏰ **Created:** {ticket.created_at.strftime('%Y-%m-%d %H:%M UTC')}\n\n"
+                )
+        
+        # Add summary
+        total_tickets = len(tickets)
+        tickets_text += f"📊 **Summary:** {total_tickets} total tickets"
+        if new_tickets:
+            tickets_text += f" ({len(new_tickets)} new)"
+        
+        await callback.message.edit_text(
+            tickets_text,
+            reply_markup=main_admin_kb(),
+            parse_mode="Markdown"
+        )
     await callback.answer()
 
 

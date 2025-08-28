@@ -5,9 +5,11 @@ from datetime import datetime
 from collections import defaultdict
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart, Command, StateFilter
 from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 
 from app.config import settings
 from app.db import get_session
@@ -22,6 +24,10 @@ dp = Dispatcher()
 user_last_bot_msg: dict[int, int] = {}
 
 
+class SupportStates(StatesGroup):
+    waiting_for_message = State()
+
+
 def main_menu_kb():
     kb = InlineKeyboardBuilder()
     kb.button(text="Balance", callback_data="balance")
@@ -30,6 +36,21 @@ def main_menu_kb():
     kb.button(text="Support", callback_data="support")
     kb.button(text="Referral", callback_data="referral")
     kb.adjust(2, 2, 1)
+    return kb.as_markup()
+
+
+def support_menu_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="📝 Create New Ticket", callback_data="create_ticket")
+    kb.button(text="🔙 Back to Menu", callback_data="back_to_menu")
+    kb.adjust(1, 1)
+    return kb.as_markup()
+
+
+def cancel_support_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="❌ Cancel", callback_data="cancel_support")
+    kb.adjust(1)
     return kb.as_markup()
 
 
@@ -199,10 +220,10 @@ async def reinvest_usdt_trc20_cb(cb: CallbackQuery):
         cb.message.chat.id,
         (
             "💎 **USDT (TRC20) Reinvestment**\n\n"
-            "Please send your USDT via TRC20 network to:\n\n"
+            "Please send your USDT via TRON network to:\n\n"
             f"`{settings.usdt_trc20_address}`\n\n"
             "⚠️ **Important:**\n"
-            "• Only send USDT via TRC20 network\n"
+            "• Only send USDT via TRON network\n"
             "• Network: TRON (TRC20)\n"
             "• Double-check the address before sending\n"
             "• Once confirmed, an admin will credit your new balance"
@@ -267,21 +288,117 @@ async def support_cb(cb: CallbackQuery):
         await send_clean_message(cb.from_user.id, cb.message.chat.id, "❌ Please redeem your access code first using /code <your_code>", reply_markup=main_menu_kb())
         await cb.answer()
         return
-    await send_clean_message(cb.from_user.id, cb.message.chat.id, "🛠 Support Request\n\nPlease describe your issue:", reply_markup=main_menu_kb())
+    
+    await send_clean_message(
+        cb.from_user.id, 
+        cb.message.chat.id, 
+        "🛠 **Support Center**\n\n"
+        "How can we help you today?",
+        reply_markup=support_menu_kb(),
+        parse_mode="Markdown"
+    )
     await cb.answer()
 
 
-@dp.message(F.reply_to_message)
-async def capture_support_reply(message: Message):
-    # If the previous bot message contains the Support Request header, treat this as ticket
-    if "Support Request" in (message.reply_to_message.text or ""):
-        with get_session() as session:
-            ticket = create_support_ticket(session, user_id=message.from_user.id, message=message.text or "")
+@dp.callback_query(F.data == "create_ticket")
+async def create_ticket_cb(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(SupportStates.waiting_for_message)
+    await send_clean_message(
+        cb.from_user.id,
+        cb.message.chat.id,
+        "📝 **Create Support Ticket**\n\n"
+        "Please describe your issue or question in detail.\n\n"
+        "💡 **Tips:**\n"
+        "• Be specific about your problem\n"
+        "• Include any error messages\n"
+        "• Mention your user ID if relevant\n\n"
+        "Type your message below:",
+        reply_markup=cancel_support_kb(),
+        parse_mode="Markdown"
+    )
+    await cb.answer()
+
+
+@dp.callback_query(F.data == "cancel_support")
+async def cancel_support_cb(cb: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await send_clean_message(
+        cb.from_user.id,
+        cb.message.chat.id,
+        "❌ Support ticket creation cancelled.",
+        reply_markup=main_menu_kb()
+    )
+    await cb.answer()
+
+
+@dp.message(StateFilter(SupportStates.waiting_for_message))
+async def handle_support_message(message: Message, state: FSMContext):
+    # Validate message
+    if not message.text or len(message.text.strip()) < 10:
         await send_clean_message(
             message.from_user.id,
             message.chat.id,
-            f"🆘 New Support Ticket (#{ticket.ticket_id[:8]}) created and sent to admin.",
-            reply_markup=main_menu_kb()
+            "❌ **Message too short!**\n\n"
+            "Please provide a detailed description (at least 10 characters).\n"
+            "Try again with more details:",
+            reply_markup=cancel_support_kb(),
+            parse_mode="Markdown"
+        )
+        return
+    
+    # Create support ticket
+    try:
+        with get_session() as session:
+            ticket = create_support_ticket(
+                session, 
+                user_id=message.from_user.id, 
+                message=message.text.strip()
+            )
+        
+        # Clear state
+        await state.clear()
+        
+        # Send confirmation
+        await send_clean_message(
+            message.from_user.id,
+            message.chat.id,
+            f"✅ **Support Ticket Created!**\n\n"
+            f"🎫 **Ticket ID:** `{ticket.ticket_id[:8]}`\n"
+            f"📝 **Your Message:** {message.text.strip()[:100]}{'...' if len(message.text) > 100 else ''}\n\n"
+            f"📧 An admin will review your ticket and respond soon.\n"
+            f"⏰ **Created:** {ticket.created_at.strftime('%Y-%m-%d %H:%M UTC')}",
+            reply_markup=main_menu_kb(),
+            parse_mode="Markdown"
+        )
+        
+        # Notify admin
+        if settings.admin_chat_id:
+            username = (message.from_user.username or "").strip()
+            mention = f"@{username}" if username else message.from_user.full_name
+            
+            admin_notification = (
+                f"🆘 **New Support Ticket**\n\n"
+                f"👤 **User:** {mention} (ID: {message.from_user.id})\n"
+                f"🎫 **Ticket:** `{ticket.ticket_id[:8]}`\n"
+                f"📝 **Message:** {message.text.strip()}\n"
+                f"⏰ **Time:** {ticket.created_at.strftime('%Y-%m-%d %H:%M UTC')}"
+            )
+            
+            await bot.send_message(
+                chat_id=settings.admin_chat_id,
+                text=admin_notification,
+                parse_mode="Markdown"
+            )
+            
+    except Exception as e:
+        await send_clean_message(
+            message.from_user.id,
+            message.chat.id,
+            f"❌ **Error creating ticket!**\n\n"
+            f"Please try again later or contact admin directly.\n"
+            f"Error: {str(e)}",
+            reply_markup=main_menu_kb(),
+            parse_mode="Markdown"
         )
 
 
@@ -298,6 +415,9 @@ async def referral_cb(cb: CallbackQuery):
         reply_markup=main_menu_kb()
     )
     await cb.answer()
+
+
+
 
 
 async def run_user_bot():

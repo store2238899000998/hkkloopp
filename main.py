@@ -1,44 +1,69 @@
 from fastapi import FastAPI
 import asyncio
 from contextlib import asynccontextmanager
+import logging
 
 from app.db import init_db
-from scheduler.jobs import start_scheduler
+from scheduler.jobs import start_scheduler, stop_scheduler, catchup_missed_roi
 from bots.user_bot import run_user_bot
 from bots.admin_bot import run_admin_bot
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup & shutdown lifecycle"""
-    print("🚀 Starting Investment Bot system...")
+    """Startup & shutdown lifecycle with recovery"""
+    logger.info("🚀 Starting Investment Bot system...")
 
     # 1. Init database
     try:
         init_db()
-        print("✅ Database initialized")
+        logger.info("✅ Database initialized")
     except Exception as e:
-        print(f"❌ Database init failed: {e}")
+        logger.error(f"❌ Database init failed: {e}")
+        raise
 
     # 2. Start scheduler
     try:
         start_scheduler()
-        print("✅ Scheduler started")
+        logger.info("✅ Scheduler started")
     except Exception as e:
-        print(f"❌ Scheduler failed: {e}")
+        logger.error(f"❌ Scheduler failed: {e}")
+        raise
 
-    # 3. Start bots concurrently in background
+    # 3. Run immediate ROI catch-up to recover from any downtime
+    try:
+        logger.info("🔄 Running ROI catch-up process...")
+        processed_users, total_payments = await catchup_missed_roi()
+        if total_payments > 0:
+            logger.info(f"🎯 Recovered {total_payments} missed ROI payments for {processed_users} users")
+        else:
+            logger.info("✅ No missed ROI payments found")
+    except Exception as e:
+        logger.error(f"❌ ROI catch-up failed: {e}")
+        # Don't fail startup for catch-up issues
+
+    # 4. Start bots concurrently in background
     try:
         asyncio.create_task(run_user_bot())
         asyncio.create_task(run_admin_bot())
-        print("🤖 Bots started (user + admin)")
+        logger.info("🤖 Bots started (user + admin)")
     except Exception as e:
-        print(f"❌ Bot startup error: {e}")
+        logger.error(f"❌ Bot startup error: {e}")
+        raise
 
     yield  # 👉 FastAPI runs here
 
-    # 4. Shutdown hooks (optional cleanup)
-    print("🛑 Shutting down Investment Bot system...")
+    # 5. Shutdown hooks with graceful cleanup
+    logger.info("🛑 Shutting down Investment Bot system...")
+    try:
+        stop_scheduler()
+        logger.info("✅ Scheduler stopped gracefully")
+    except Exception as e:
+        logger.error(f"❌ Scheduler shutdown error: {e}")
 
 
 app = FastAPI(lifespan=lifespan)
@@ -47,6 +72,36 @@ app = FastAPI(lifespan=lifespan)
 @app.get("/")
 async def root():
     return {"message": "Hello from Investment Bot API + Bots 🚀"}
+
+
+@app.get("/health")
+async def health():
+    """Enhanced health check endpoint"""
+    from datetime import datetime
+    return {
+        "status": "healthy",
+        "service": "Investment Bot",
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+
+@app.post("/admin/recovery/catchup-roi")
+async def manual_catchup_roi():
+    """Manual endpoint to trigger ROI catch-up (admin only)"""
+    try:
+        processed_users, total_payments = await catchup_missed_roi()
+        return {
+            "success": True,
+            "message": f"ROI catch-up completed: {processed_users} users, {total_payments} payments",
+            "processed_users": processed_users,
+            "total_payments": total_payments
+        }
+    except Exception as e:
+        logger.error(f"Manual ROI catch-up failed: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
 
 
