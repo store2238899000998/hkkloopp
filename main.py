@@ -104,7 +104,7 @@ async def health():
     return {
         "status": "healthy",
         "service": "Investment Bot",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now().isoformat(),
         "process_id": os.getpid(),
         "deployment_time": os.getenv("DEPLOYMENT_TIME", "unknown")
     }

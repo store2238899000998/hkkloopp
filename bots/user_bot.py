@@ -502,7 +502,7 @@ async def view_projections_cb(callback: CallbackQuery):
                     total_projected += weekly_roi
                 
                 from datetime import timedelta
-                completion_date = datetime.utcnow() + timedelta(days=remaining_cycles * 7)
+                completion_date = datetime.now() + timedelta(days=remaining_cycles * 7)
                 
                 projection_text = (
                     "📊 **Earnings Projection**\n\n"

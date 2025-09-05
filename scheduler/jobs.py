@@ -38,7 +38,7 @@ async def catchup_missed_roi():
             user_catchup = 0
             # Process all missed ROI payments
             while (user.next_roi_date and 
-                   datetime.utcnow() >= user.next_roi_date and 
+                   datetime.now() >= user.next_roi_date and 
                    user.roi_cycles_completed < settings.max_roi_cycles):
                 
                 if process_due_roi_for_user(session, user):
@@ -82,7 +82,7 @@ async def job_daily_ping():
                 try:
                     remaining_days = 0
                     if user.next_roi_date:
-                        remaining_days = max(0, (user.next_roi_date.date() - datetime.utcnow().date()).days)
+                        remaining_days = max(0, (user.next_roi_date.date() - datetime.now().date()).days)
                     
                     text = (
                         f"🌞 Good Morning!\n\n"
