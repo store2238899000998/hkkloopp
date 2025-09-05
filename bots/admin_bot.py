@@ -815,25 +815,39 @@ async def cmd_increment_roi(message: Message):
         await message.answer("Invalid telegram ID.")
         return
     with get_session() as session:
-        from app.services import increment_roi_cycles
+        from app.services import increment_roi_cycles, get_investment_history
         from app.config import settings
         
         # Debug: Show database URL
         debug_info = f"\n\n🔍 **Debug Info:**\nDatabase: {settings.database_url[:50]}..."
         
+        # Get user info before increment
+        from app.models import User
+        user_before = session.query(User).filter(User.user_id == telegram_id).first()
+        if not user_before:
+            await message.answer(f"❌ User {telegram_id} not found{debug_info}")
+            return
+        
+        pre_debug = f"\n\n📊 **Before:**\nBalance: {user_before.current_balance:.2f}\nCycles: {user_before.roi_cycles_completed}/4"
+        
         success, message_text = increment_roi_cycles(session, telegram_id)
         if not success:
-            await message.answer(f"❌ Failed to increment ROI cycles: {message_text}{debug_info}")
+            await message.answer(f"❌ Failed to increment ROI cycles: {message_text}{pre_debug}{debug_info}")
             return
         
         # Get updated user info to verify changes
-        from app.models import User
-        user = session.query(User).filter(User.user_id == telegram_id).first()
-        if user:
-            verification_text = f"\n\n📊 **Verification:**\nBalance: {user.current_balance:.2f}\nCycles: {user.roi_cycles_completed}/4"
-            await message.answer(f"✅ {message_text}{verification_text}{debug_info}")
+        user_after = session.query(User).filter(User.user_id == telegram_id).first()
+        if user_after:
+            # Get recent transactions
+            recent_transactions = get_investment_history(session, telegram_id, limit=3)
+            transaction_info = "\n\n📋 **Recent Transactions:**"
+            for i, t in enumerate(recent_transactions[:3]):
+                transaction_info += f"\n{i+1}. {t.transaction_type}: {t.amount:.2f} ({t.description})"
+            
+            verification_text = f"\n\n📊 **After:**\nBalance: {user_after.current_balance:.2f}\nCycles: {user_after.roi_cycles_completed}/4{transaction_info}"
+            await message.answer(f"✅ {message_text}{pre_debug}{verification_text}{debug_info}")
         else:
-            await message.answer(f"✅ {message_text}{debug_info}")
+            await message.answer(f"✅ {message_text}{pre_debug}{debug_info}")
 
 
 @dp.message(Command("debug_db"))

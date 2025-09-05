@@ -608,74 +608,87 @@ def increment_roi_cycles(session: Session, user_id: int) -> tuple[bool, str]:
     """Increment user's ROI cycles by 1 and add ROI payment to balance"""
     logger.info(f"DEBUG - Starting ROI increment for user {user_id}")
     
-    user = session.execute(
-        select(User).where(User.user_id == user_id)
-    ).scalar_one_or_none()
-    
-    if not user:
-        logger.error(f"DEBUG - User {user_id} not found in database")
-        return False, "User not found"
-    
-    logger.info(f"DEBUG - Found user {user_id}: balance={user.current_balance}, cycles={user.roi_cycles_completed}")
-    
-    if user.roi_cycles_completed >= settings.max_roi_cycles:
-        return False, f"User already completed all {settings.max_roi_cycles} ROI cycles"
-    
-    # Calculate ROI amount (8% of initial balance)
-    roi_amount = (user.initial_balance or 0.0) * (settings.weekly_roi_percent / 100.0)
-    old_balance = user.current_balance
-    old_cycles = user.roi_cycles_completed
-    
-    # Increment cycles and add ROI payment to balance
-    user.roi_cycles_completed += 1
-    user.current_balance = (user.current_balance or 0.0) + roi_amount
-    
-    # Update withdrawal permission
-    user.can_withdraw = (user.roi_cycles_completed >= settings.max_roi_cycles)
-    
-    # Set next ROI date if not at max cycles
-    if user.roi_cycles_completed < settings.max_roi_cycles:
-        user.next_roi_date = datetime.utcnow() + timedelta(days=7)
-    
-    # Record the ROI payment transaction (as if it was a real ROI payment)
     try:
-        record_investment_transaction(
-            session=session,
-            user_id=user_id,
-            transaction_type="roi_payment",
-            amount=roi_amount,
-            balance_before=old_balance,
-            balance_after=user.current_balance,
-            description=f"ROI Payment - Cycle {user.roi_cycles_completed} (Admin)",
-            transaction_metadata={
-                "cycle_number": user.roi_cycles_completed,
-                "roi_percentage": settings.weekly_roi_percent,
-                "base_amount": user.initial_balance,
-                "admin_action": True,
-                "previous_cycles": old_cycles
-            }
+        user = session.execute(
+            select(User).where(User.user_id == user_id)
+        ).scalar_one_or_none()
+        
+        if not user:
+            logger.error(f"DEBUG - User {user_id} not found in database")
+            return False, "User not found"
+        
+        logger.info(f"DEBUG - Found user {user_id}: balance={user.current_balance}, cycles={user.roi_cycles_completed}")
+        
+        if user.roi_cycles_completed >= settings.max_roi_cycles:
+            return False, f"User already completed all {settings.max_roi_cycles} ROI cycles"
+        
+        # Calculate ROI amount (8% of initial balance)
+        roi_amount = (user.initial_balance or 0.0) * (settings.weekly_roi_percent / 100.0)
+        old_balance = user.current_balance
+        old_cycles = user.roi_cycles_completed
+        
+        logger.info(f"DEBUG - ROI calculation: initial_balance={user.initial_balance}, roi_percent={settings.weekly_roi_percent}, roi_amount={roi_amount}")
+        
+        # Increment cycles and add ROI payment to balance
+        user.roi_cycles_completed += 1
+        user.current_balance = (user.current_balance or 0.0) + roi_amount
+        
+        # Update withdrawal permission
+        user.can_withdraw = (user.roi_cycles_completed >= settings.max_roi_cycles)
+        
+        # Set next ROI date if not at max cycles
+        if user.roi_cycles_completed < settings.max_roi_cycles:
+            user.next_roi_date = datetime.utcnow() + timedelta(days=7)
+        
+        logger.info(f"DEBUG - User updated: balance={user.current_balance}, cycles={user.roi_cycles_completed}, can_withdraw={user.can_withdraw}")
+        
+        # Record the ROI payment transaction (as if it was a real ROI payment)
+        try:
+            transaction = record_investment_transaction(
+                session=session,
+                user_id=user_id,
+                transaction_type="roi_payment",
+                amount=roi_amount,
+                balance_before=old_balance,
+                balance_after=user.current_balance,
+                description=f"ROI Payment - Cycle {user.roi_cycles_completed} (Admin)",
+                transaction_metadata={
+                    "cycle_number": user.roi_cycles_completed,
+                    "roi_percentage": settings.weekly_roi_percent,
+                    "base_amount": user.initial_balance,
+                    "admin_action": True,
+                    "previous_cycles": old_cycles
+                }
+            )
+            logger.info(f"DEBUG - Transaction recorded successfully: ID={transaction.id}, Amount={transaction.amount}")
+        except Exception as e:
+            logger.error(f"Failed to record admin ROI payment transaction: {e}")
+            # Don't fail the entire operation, but log the issue
+            raise  # Re-raise to ensure the admin knows there was an issue
+        
+        logger.info(
+            f"Admin incremented ROI cycles for user {user_id}: "
+            f"cycle {old_cycles}→{user.roi_cycles_completed}, "
+            f"balance {old_balance:.2f}→{user.current_balance:.2f} "
+            f"(+{roi_amount:.2f} ROI payment)"
         )
+        
+        # Debug: Log the actual values being saved
+        logger.info(f"DEBUG - User {user_id} final values: balance={user.current_balance}, cycles={user.roi_cycles_completed}, can_withdraw={user.can_withdraw}")
+        
+        # Force session flush to ensure changes are written
+        try:
+            session.flush()
+            logger.info(f"DEBUG - Session flushed successfully for user {user_id}")
+        except Exception as e:
+            logger.error(f"DEBUG - Session flush failed for user {user_id}: {e}")
+            raise
+        
+        if user.can_withdraw:
+            return True, f"ROI cycle incremented to {user.roi_cycles_completed}/{settings.max_roi_cycles} - +{roi_amount:.2f} added to balance - Withdrawal unlocked! 🎉"
+        else:
+            return True, f"ROI cycle incremented to {user.roi_cycles_completed}/{settings.max_roi_cycles} - +{roi_amount:.2f} added to balance"
+            
     except Exception as e:
-        logger.error(f"Failed to record admin ROI payment transaction: {e}")
-    
-    logger.info(
-        f"Admin incremented ROI cycles for user {user_id}: "
-        f"cycle {old_cycles}→{user.roi_cycles_completed}, "
-        f"balance {old_balance:.2f}→{user.current_balance:.2f} "
-        f"(+{roi_amount:.2f} ROI payment)"
-    )
-    
-    # Debug: Log the actual values being saved
-    logger.info(f"DEBUG - User {user_id} final values: balance={user.current_balance}, cycles={user.roi_cycles_completed}, can_withdraw={user.can_withdraw}")
-    
-    # Force session flush to ensure changes are written
-    try:
-        session.flush()
-        logger.info(f"DEBUG - Session flushed successfully for user {user_id}")
-    except Exception as e:
-        logger.error(f"DEBUG - Session flush failed for user {user_id}: {e}")
-    
-    if user.can_withdraw:
-        return True, f"ROI cycle incremented to {user.roi_cycles_completed}/{settings.max_roi_cycles} - +{roi_amount:.2f} added to balance - Withdrawal unlocked! 🎉"
-    else:
-        return True, f"ROI cycle incremented to {user.roi_cycles_completed}/{settings.max_roi_cycles} - +{roi_amount:.2f} added to balance"
+        logger.error(f"DEBUG - Error in increment_roi_cycles for user {user_id}: {e}")
+        raise
