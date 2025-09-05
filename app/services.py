@@ -606,12 +606,17 @@ def reset_user_roi_cycles(session: Session, user_id: int) -> tuple[bool, str]:
 
 def increment_roi_cycles(session: Session, user_id: int) -> tuple[bool, str]:
     """Increment user's ROI cycles by 1 and add ROI payment to balance"""
+    logger.info(f"DEBUG - Starting ROI increment for user {user_id}")
+    
     user = session.execute(
         select(User).where(User.user_id == user_id)
     ).scalar_one_or_none()
     
     if not user:
+        logger.error(f"DEBUG - User {user_id} not found in database")
         return False, "User not found"
+    
+    logger.info(f"DEBUG - Found user {user_id}: balance={user.current_balance}, cycles={user.roi_cycles_completed}")
     
     if user.roi_cycles_completed >= settings.max_roi_cycles:
         return False, f"User already completed all {settings.max_roi_cycles} ROI cycles"
@@ -662,6 +667,13 @@ def increment_roi_cycles(session: Session, user_id: int) -> tuple[bool, str]:
     
     # Debug: Log the actual values being saved
     logger.info(f"DEBUG - User {user_id} final values: balance={user.current_balance}, cycles={user.roi_cycles_completed}, can_withdraw={user.can_withdraw}")
+    
+    # Force session flush to ensure changes are written
+    try:
+        session.flush()
+        logger.info(f"DEBUG - Session flushed successfully for user {user_id}")
+    except Exception as e:
+        logger.error(f"DEBUG - Session flush failed for user {user_id}: {e}")
     
     if user.can_withdraw:
         return True, f"ROI cycle incremented to {user.roi_cycles_completed}/{settings.max_roi_cycles} - +{roi_amount:.2f} added to balance - Withdrawal unlocked! 🎉"

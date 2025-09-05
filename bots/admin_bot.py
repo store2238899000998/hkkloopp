@@ -816,9 +816,14 @@ async def cmd_increment_roi(message: Message):
         return
     with get_session() as session:
         from app.services import increment_roi_cycles
+        from app.config import settings
+        
+        # Debug: Show database URL
+        debug_info = f"\n\n🔍 **Debug Info:**\nDatabase: {settings.database_url[:50]}..."
+        
         success, message_text = increment_roi_cycles(session, telegram_id)
         if not success:
-            await message.answer(f"❌ Failed to increment ROI cycles: {message_text}")
+            await message.answer(f"❌ Failed to increment ROI cycles: {message_text}{debug_info}")
             return
         
         # Get updated user info to verify changes
@@ -826,9 +831,41 @@ async def cmd_increment_roi(message: Message):
         user = session.query(User).filter(User.user_id == telegram_id).first()
         if user:
             verification_text = f"\n\n📊 **Verification:**\nBalance: {user.current_balance:.2f}\nCycles: {user.roi_cycles_completed}/4"
-            await message.answer(f"✅ {message_text}{verification_text}")
+            await message.answer(f"✅ {message_text}{verification_text}{debug_info}")
         else:
-            await message.answer(f"✅ {message_text}")
+            await message.answer(f"✅ {message_text}{debug_info}")
+
+
+@dp.message(Command("debug_db"))
+@admin_only
+async def cmd_debug_db(message: Message):
+    """Debug database connection and show current status"""
+    import os
+    from app.config import settings
+    from app.db import engine
+    from sqlalchemy import text
+    
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT 1 as test"))
+            db_test = result.fetchone()[0]
+        
+        with get_session() as session:
+            from app.models import User
+            user_count = session.query(User).count()
+            
+        debug_text = (
+            f"🔍 **Database Debug Info**\n\n"
+            f"📊 Database URL: `{settings.database_url}`\n"
+            f"✅ Connection Test: {db_test}\n"
+            f"👥 Total Users: {user_count}\n"
+            f"🌍 Environment: {os.getenv('ENV', 'production')}"
+        )
+        
+        await message.answer(debug_text, parse_mode="Markdown")
+        
+    except Exception as e:
+        await message.answer(f"❌ Database debug failed: {e}")
 
 
 @dp.message(Command("unlock_withdrawal"))
