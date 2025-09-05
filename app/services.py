@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 def create_user(session: Session, user_id: int, name: str, initial_balance: float = 0.0, email: str | None = None, phone: str | None = None, country: str | None = None) -> User:
     """Create a new user"""
-    user = session.get(User, user_id)
+    user = session.query(User).filter(User.user_id == user_id).first()
     if user:
         return user
     now = datetime.utcnow()
@@ -66,7 +66,7 @@ def create_user_with_access_code(session: Session, name: str, initial_balance: f
 
 
 def credit_user_balance(session: Session, user_id: int, amount: float) -> Optional[User]:
-    user = session.get(User, user_id)
+    user = session.query(User).filter(User.user_id == user_id).first()
     if not user:
         return None
 
