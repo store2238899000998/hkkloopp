@@ -339,15 +339,20 @@ async def set_roi_cycles_callback(callback: CallbackQuery):
 async def increment_roi_cycles_callback(callback: CallbackQuery):
     await callback.message.edit_text(
         "➕ **Increment ROI Cycles**\n\n"
-        "Add +1 to a user's current ROI cycles:\n\n"
+        "Add +1 to a user's current ROI cycles AND add ROI payment to balance:\n\n"
         "**Command Format:**\n"
         "`/increment_roi <telegram_id>`\n\n"
+        "**What happens:**\n"
+        "• Increments ROI cycles by +1\n"
+        "• Adds 8% of initial balance to current balance\n"
+        "• Records ROI payment in transaction history\n"
+        "• Updates next ROI date\n\n"
         "**Examples:**\n"
-        "• `/increment_roi 123456789` - Add +1 to current cycles\n\n"
+        "• `/increment_roi 123456789` - Add +1 cycle + ROI payment\n\n"
         "💡 **Note**:\n"
         "• Cycles range from 0 to 4\n"
         "• Reaching 4 cycles automatically unlocks withdrawal\n"
-        "• Users can't exceed 4 cycles",
+        "• ROI payment = 8% of user's initial balance",
         reply_markup=roi_cycle_management_kb(),
         parse_mode="Markdown"
     )
