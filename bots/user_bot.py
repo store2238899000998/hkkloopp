@@ -110,7 +110,7 @@ async def send_clean_message(user_id: int, chat_id: int, text: str, reply_markup
 
 async def check_user_exists(callback: CallbackQuery) -> bool:
     with get_session() as session:
-        user = session.get(User, callback.from_user.id)
+        user = session.query(User).filter(User.user_id == callback.from_user.id).first()
         return user is not None
 
 
@@ -156,7 +156,7 @@ async def balance_cb(cb: CallbackQuery):
         await cb.answer()
         return
     with get_session() as session:
-        user = session.get(User, cb.from_user.id)
+        user = session.query(User).filter(User.user_id == cb.from_user.id).first()
         remaining_days = 0
         if user.next_roi_date:
             remaining_days = max(0, (user.next_roi_date.date() - cb.message.date.date()).days)
@@ -176,7 +176,7 @@ async def withdraw_cb(cb: CallbackQuery):
         await cb.answer()
         return
     with get_session() as session:
-        user = session.get(User, cb.from_user.id)
+        user = session.query(User).filter(User.user_id == cb.from_user.id).first()
         if not user.can_withdraw:
             await send_clean_message(
                 cb.from_user.id,
@@ -468,7 +468,7 @@ async def view_projections_cb(callback: CallbackQuery):
     """Show earnings projections"""
     try:
         with get_session() as session:
-            user = session.get(User, callback.from_user.id)
+            user = session.query(User).filter(User.user_id == callback.from_user.id).first()
             if not user:
                 await callback.message.edit_text(
                     "❌ **User not found!**\n\n"
@@ -536,7 +536,7 @@ async def weekly_breakdown_cb(callback: CallbackQuery):
     """Show weekly ROI breakdown"""
     try:
         with get_session() as session:
-            user = session.get(User, callback.from_user.id)
+            user = session.query(User).filter(User.user_id == callback.from_user.id).first()
             if not user:
                 await callback.message.edit_text(
                     "❌ **User not found!**\n\n"
@@ -608,7 +608,7 @@ async def all_transactions_cb(callback: CallbackQuery):
     """Show all transactions"""
     try:
         with get_session() as session:
-            user = session.get(User, callback.from_user.id)
+            user = session.query(User).filter(User.user_id == callback.from_user.id).first()
             if not user:
                 await callback.message.edit_text(
                     "❌ **User not found!**\n\n"
@@ -651,7 +651,7 @@ async def roi_transactions_cb(callback: CallbackQuery):
     """Show ROI payment transactions"""
     try:
         with get_session() as session:
-            user = session.get(User, callback.from_user.id)
+            user = session.query(User).filter(User.user_id == callback.from_user.id).first()
             if not user:
                 await callback.message.edit_text(
                     "❌ **User not found!**\n\n"
@@ -695,7 +695,7 @@ async def reinvestment_transactions_cb(callback: CallbackQuery):
     """Show reinvestment transactions"""
     try:
         with get_session() as session:
-            user = session.get(User, callback.from_user.id)
+            user = session.query(User).filter(User.user_id == callback.from_user.id).first()
             if not user:
                 await callback.message.edit_text(
                     "❌ **User not found!**\n\n"
