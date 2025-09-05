@@ -820,7 +820,15 @@ async def cmd_increment_roi(message: Message):
         if not success:
             await message.answer(f"❌ Failed to increment ROI cycles: {message_text}")
             return
-    await message.answer(f"✅ ROI cycles incremented for user {telegram_id}")
+        
+        # Get updated user info to verify changes
+        from app.models import User
+        user = session.query(User).filter(User.user_id == telegram_id).first()
+        if user:
+            verification_text = f"\n\n📊 **Verification:**\nBalance: {user.current_balance:.2f}\nCycles: {user.roi_cycles_completed}/4"
+            await message.answer(f"✅ {message_text}{verification_text}")
+        else:
+            await message.answer(f"✅ {message_text}")
 
 
 @dp.message(Command("unlock_withdrawal"))

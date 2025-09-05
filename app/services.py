@@ -660,6 +660,9 @@ def increment_roi_cycles(session: Session, user_id: int) -> tuple[bool, str]:
         f"(+{roi_amount:.2f} ROI payment)"
     )
     
+    # Debug: Log the actual values being saved
+    logger.info(f"DEBUG - User {user_id} final values: balance={user.current_balance}, cycles={user.roi_cycles_completed}, can_withdraw={user.can_withdraw}")
+    
     if user.can_withdraw:
         return True, f"ROI cycle incremented to {user.roi_cycles_completed}/{settings.max_roi_cycles} - +{roi_amount:.2f} added to balance - Withdrawal unlocked! 🎉"
     else:
