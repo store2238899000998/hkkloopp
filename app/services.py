@@ -31,7 +31,6 @@ def create_user(session: Session, user_id: int, name: str, initial_balance: floa
         country=country,
         initial_balance=initial_balance,
         current_balance=initial_balance,
-        start_date=now,
         next_roi_date=now + timedelta(days=7),
         roi_cycles_completed=0,
         can_withdraw=False,
@@ -131,8 +130,8 @@ def redeem_access_code(session: Session, code: str, user_id: int) -> Optional[Us
     # Note: preassigned_user_id field doesn't exist in current AccessCode model
     # if access.preassigned_user_id and access.preassigned_user_id != user_id:
     #     return None
-    # Use hardcoded values since the AccessCode model doesn't have name/balance fields
-    user = create_user(session, user_id=user_id, name="David", initial_balance=50000.00)
+    # Use the actual access code data
+    user = create_user(session, user_id=user_id, name=access.name, initial_balance=access.initial_balance)
     access.used_by = user_id
     access.used_at = datetime.utcnow()
     return user
