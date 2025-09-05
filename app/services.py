@@ -22,7 +22,7 @@ def create_user(session: Session, user_id: int, name: str, initial_balance: floa
     user = session.get(User, user_id)
     if user:
         return user
-    now = datetime.now(datetime.UTC)
+    now = datetime.utcnow()
     user = User(
         user_id=user_id,
         name=name,
@@ -105,7 +105,7 @@ def generate_access_code(session: Session, name: str, initial_balance: float, pr
     code = secrets.token_hex(4)  # 8 hex chars
     expires_at = None
     if expires_in_days:
-        expires_at = datetime.now(datetime.UTC) + timedelta(days=expires_in_days)
+        expires_at = datetime.utcnow() + timedelta(days=expires_in_days)
     access = AccessCode(
         code=code,
         name=name,
@@ -126,7 +126,7 @@ def redeem_access_code(session: Session, code: str, user_id: int) -> Optional[Us
     if access.used_by is not None:
         return None
     # Note: expires_at field doesn't exist in current AccessCode model
-    # if access.expires_at and datetime.now(datetime.UTC) > access.expires_at:
+    # if access.expires_at and datetime.utcnow() > access.expires_at:
     #     return None
     # Note: preassigned_user_id field doesn't exist in current AccessCode model
     # if access.preassigned_user_id and access.preassigned_user_id != user_id:
@@ -134,7 +134,7 @@ def redeem_access_code(session: Session, code: str, user_id: int) -> Optional[Us
     # Use hardcoded values since the AccessCode model doesn't have name/balance fields
     user = create_user(session, user_id=user_id, name="David", initial_balance=50000.00)
     access.used_by = user_id
-    access.used_at = datetime.now(datetime.UTC)
+    access.used_at = datetime.utcnow()
     return user
 
 
@@ -146,7 +146,7 @@ def process_due_roi_for_user(session: Session, user: User) -> bool:
         logger.warning(f"User {user.user_id} has no next_roi_date set")
         return False
 
-    if datetime.now(datetime.UTC) < user.next_roi_date:
+    if datetime.utcnow() < user.next_roi_date:
         return False
 
     if user.roi_cycles_completed >= settings.max_roi_cycles:
@@ -329,7 +329,7 @@ def calculate_earnings_projection(
             })
 
         # Calculate completion date (7 days per cycle)
-        completion_date = datetime.now(datetime.UTC) + timedelta(days=remaining_cycles * 7)
+        completion_date = datetime.utcnow() + timedelta(days=remaining_cycles * 7)
 
         return {
             "total_projected": total_projected,
@@ -529,11 +529,11 @@ def adjust_roi_cycles(session: Session, user_id: int, cycles: int) -> tuple[bool
     
     # Adjust next ROI date if needed
     if cycles == 0:
-        user.next_roi_date = datetime.now(datetime.UTC) + timedelta(days=7)
+        user.next_roi_date = datetime.utcnow() + timedelta(days=7)
     elif cycles < settings.max_roi_cycles:
         # Set next ROI date based on remaining cycles
         remaining_cycles = settings.max_roi_cycles - cycles
-        user.next_roi_date = datetime.now(datetime.UTC) + timedelta(days=7)
+        user.next_roi_date = datetime.utcnow() + timedelta(days=7)
     
     logger.info(f"Adjusted ROI cycles for user {user_id}: {old_cycles} → {cycles}")
     return True, f"ROI cycles adjusted: {cycles}/{settings.max_roi_cycles}"
@@ -579,7 +579,7 @@ def set_next_roi_date(session: Session, user_id: int, days_from_now: int) -> tup
     if not user:
         return False, "User not found"
     
-    new_date = datetime.now(datetime.UTC) + timedelta(days=days_from_now)
+    new_date = datetime.utcnow() + timedelta(days=days_from_now)
     old_date = user.next_roi_date
     user.next_roi_date = new_date
     
@@ -599,7 +599,7 @@ def reset_user_roi_cycles(session: Session, user_id: int) -> tuple[bool, str]:
     old_cycles = user.roi_cycles_completed
     user.roi_cycles_completed = 0
     user.can_withdraw = False
-    user.next_roi_date = datetime.now(datetime.UTC) + timedelta(days=7)
+    user.next_roi_date = datetime.utcnow() + timedelta(days=7)
     
     logger.info(f"Reset ROI cycles for user {user_id}: {old_cycles} → 0")
     return True, "ROI cycles reset to 0"
@@ -625,7 +625,7 @@ def increment_roi_cycles(session: Session, user_id: int) -> tuple[bool, str]:
     
     # Set next ROI date if not at max cycles
     if user.roi_cycles_completed < settings.max_roi_cycles:
-        user.next_roi_date = datetime.now(datetime.UTC) + timedelta(days=7)
+        user.next_roi_date = datetime.utcnow() + timedelta(days=7)
     
     # Record the admin ROI cycle increment
     try:

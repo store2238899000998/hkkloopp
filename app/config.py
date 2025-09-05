@@ -22,7 +22,8 @@ class Settings:
 	# Database
 	database_url: str = os.getenv(
 		"DATABASE_URL",
-		"sqlite:///./investment_bot.db",
+		"sqlite:///./investment_bot.db" if os.getenv("ENV", "development") == "development" 
+		else "postgresql://postgres:GYOjDktCKelsYytMcVHeuGBUUSwFrRLD@postgres.railway.internal:5432/railway",
 	)
 
 	# Business config
