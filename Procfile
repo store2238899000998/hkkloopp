@@ -1,1 +1,1 @@
-web: python deploy_check.py
+web: python main.py
