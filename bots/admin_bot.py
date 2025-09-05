@@ -865,14 +865,16 @@ async def cmd_debug_db(message: Message):
             db_test = result.fetchone()[0]
         
         with get_session() as session:
-            from app.models import User
+            from app.models import User, InvestmentHistory
             user_count = session.query(User).count()
+            transaction_count = session.query(InvestmentHistory).count()
             
         debug_text = (
             f"🔍 **Database Debug Info**\n\n"
             f"📊 Database URL: `{settings.database_url}`\n"
             f"✅ Connection Test: {db_test}\n"
             f"👥 Total Users: {user_count}\n"
+            f"📋 Total Transactions: {transaction_count}\n"
             f"🌍 Environment: {os.getenv('ENV', 'production')}"
         )
         
@@ -880,6 +882,84 @@ async def cmd_debug_db(message: Message):
         
     except Exception as e:
         await message.answer(f"❌ Database debug failed: {e}")
+
+
+@dp.message(Command("test_roi"))
+@admin_only
+async def cmd_test_roi(message: Message):
+    """Test ROI increment with detailed logging"""
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("Usage: /test_roi <telegram_id>")
+        return
+    try:
+        telegram_id = int(parts[1])
+    except Exception:
+        await message.answer("Invalid telegram ID.")
+        return
+    
+    with get_session() as session:
+        from app.services import increment_roi_cycles, get_investment_history
+        from app.models import User, InvestmentHistory
+        
+        # Get user info before increment
+        user_before = session.query(User).filter(User.user_id == telegram_id).first()
+        if not user_before:
+            await message.answer(f"❌ User {telegram_id} not found")
+            return
+        
+        # Get transaction count before
+        transactions_before = session.query(InvestmentHistory).filter(
+            InvestmentHistory.user_id == telegram_id
+        ).count()
+        
+        pre_info = (
+            f"📊 **Before ROI Increment:**\n"
+            f"Balance: {user_before.current_balance:.2f}\n"
+            f"Cycles: {user_before.roi_cycles_completed}/4\n"
+            f"Transactions: {transactions_before}\n"
+            f"Can Withdraw: {user_before.can_withdraw}"
+        )
+        
+        await message.answer(pre_info, parse_mode="Markdown")
+        
+        # Perform ROI increment
+        try:
+            success, message_text = increment_roi_cycles(session, telegram_id)
+            if not success:
+                await message.answer(f"❌ ROI increment failed: {message_text}")
+                return
+        except Exception as e:
+            await message.answer(f"❌ ROI increment error: {e}")
+            return
+        
+        # Get user info after increment
+        user_after = session.query(User).filter(User.user_id == telegram_id).first()
+        if not user_after:
+            await message.answer("❌ User not found after increment")
+            return
+        
+        # Get transaction count after
+        transactions_after = session.query(InvestmentHistory).filter(
+            InvestmentHistory.user_id == telegram_id
+        ).count()
+        
+        # Get recent transactions
+        recent_transactions = get_investment_history(session, telegram_id, limit=3)
+        
+        post_info = (
+            f"📊 **After ROI Increment:**\n"
+            f"Balance: {user_after.current_balance:.2f}\n"
+            f"Cycles: {user_after.roi_cycles_completed}/4\n"
+            f"Transactions: {transactions_after}\n"
+            f"Can Withdraw: {user_after.can_withdraw}\n\n"
+            f"📋 **Recent Transactions:**\n"
+        )
+        
+        for i, t in enumerate(recent_transactions[:3]):
+            post_info += f"{i+1}. {t.transaction_type}: {t.amount:.2f} ({t.description})\n"
+        
+        await message.answer(post_info, parse_mode="Markdown")
 
 
 @dp.message(Command("unlock_withdrawal"))
@@ -969,6 +1049,10 @@ async def admin_help(message: Message):
 ⚙️ **User Settings:**
 • `/enable_withdrawal <user_id>` - Enable user withdrawal
 • `/disable_withdrawal <user_id>` - Disable user withdrawal
+
+🔍 **Debug Commands:**
+• `/debug_db` - Check database connection and stats
+• `/test_roi <user_id>` - Test ROI increment with detailed logging
 
 🎯 **Features:**
 • User registration with full details

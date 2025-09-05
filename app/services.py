@@ -609,9 +609,15 @@ def increment_roi_cycles(session: Session, user_id: int) -> tuple[bool, str]:
     logger.info(f"DEBUG - Starting ROI increment for user {user_id}")
     
     try:
-        user = session.execute(
-            select(User).where(User.user_id == user_id)
-        ).scalar_one_or_none()
+        # Get user with explicit error handling
+        try:
+            user = session.execute(
+                select(User).where(User.user_id == user_id)
+            ).scalar_one_or_none()
+            logger.info(f"DEBUG - User query executed successfully")
+        except Exception as e:
+            logger.error(f"DEBUG - Error querying user {user_id}: {e}")
+            raise
         
         if not user:
             logger.error(f"DEBUG - User {user_id} not found in database")
@@ -630,17 +636,21 @@ def increment_roi_cycles(session: Session, user_id: int) -> tuple[bool, str]:
         logger.info(f"DEBUG - ROI calculation: initial_balance={user.initial_balance}, roi_percent={settings.weekly_roi_percent}, roi_amount={roi_amount}")
         
         # Increment cycles and add ROI payment to balance
-        user.roi_cycles_completed += 1
-        user.current_balance = (user.current_balance or 0.0) + roi_amount
-        
-        # Update withdrawal permission
-        user.can_withdraw = (user.roi_cycles_completed >= settings.max_roi_cycles)
-        
-        # Set next ROI date if not at max cycles
-        if user.roi_cycles_completed < settings.max_roi_cycles:
-            user.next_roi_date = datetime.utcnow() + timedelta(days=7)
-        
-        logger.info(f"DEBUG - User updated: balance={user.current_balance}, cycles={user.roi_cycles_completed}, can_withdraw={user.can_withdraw}")
+        try:
+            user.roi_cycles_completed += 1
+            user.current_balance = (user.current_balance or 0.0) + roi_amount
+            
+            # Update withdrawal permission
+            user.can_withdraw = (user.roi_cycles_completed >= settings.max_roi_cycles)
+            
+            # Set next ROI date if not at max cycles
+            if user.roi_cycles_completed < settings.max_roi_cycles:
+                user.next_roi_date = datetime.utcnow() + timedelta(days=7)
+            
+            logger.info(f"DEBUG - User updated: balance={user.current_balance}, cycles={user.roi_cycles_completed}, can_withdraw={user.can_withdraw}")
+        except Exception as e:
+            logger.error(f"DEBUG - Error updating user fields: {e}")
+            raise
         
         # Record the ROI payment transaction (as if it was a real ROI payment)
         try:
@@ -684,6 +694,14 @@ def increment_roi_cycles(session: Session, user_id: int) -> tuple[bool, str]:
             logger.error(f"DEBUG - Session flush failed for user {user_id}: {e}")
             raise
         
+        # Verify the changes were actually saved
+        try:
+            # Refresh the user object to get the latest data
+            session.refresh(user)
+            logger.info(f"DEBUG - User refreshed: balance={user.current_balance}, cycles={user.roi_cycles_completed}")
+        except Exception as e:
+            logger.error(f"DEBUG - Error refreshing user: {e}")
+        
         if user.can_withdraw:
             return True, f"ROI cycle incremented to {user.roi_cycles_completed}/{settings.max_roi_cycles} - +{roi_amount:.2f} added to balance - Withdrawal unlocked! 🎉"
         else:
@@ -691,4 +709,6 @@ def increment_roi_cycles(session: Session, user_id: int) -> tuple[bool, str]:
             
     except Exception as e:
         logger.error(f"DEBUG - Error in increment_roi_cycles for user {user_id}: {e}")
+        import traceback
+        logger.error(f"DEBUG - Traceback: {traceback.format_exc()}")
         raise
